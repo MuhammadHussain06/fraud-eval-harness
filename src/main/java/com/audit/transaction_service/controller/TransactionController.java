@@ -2,6 +2,7 @@ package com.audit.transaction_service.controller;
 
 import com.audit.transaction_service.dto.RequestDto;
 import com.audit.transaction_service.dto.ResponseDto;
+import com.audit.transaction_service.repository.TransactionRepository;
 import com.audit.transaction_service.service.TransactionService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;

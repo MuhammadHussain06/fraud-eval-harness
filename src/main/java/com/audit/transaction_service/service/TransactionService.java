@@ -33,14 +33,18 @@ public class TransactionService {
     @Value("${app.db.save.enabled:true}")
     private boolean dbSaveEnabled;
 
-    @Value("${app.ai.mock-risk-score:0.85}")
-    private double mockAiRiskScore;
 
-
-    // constructor to insantiate webClient and transactionRepository
+    // constructor to instantiate webClient and transactionRepository
     public TransactionService(TransactionRepository transactionRepository, WebClient webClient) {
         this.transactionRepository = transactionRepository;
         this.webClient = webClient;
+    }
+
+    // clears database on startup
+    @jakarta.annotation.PostConstruct
+    public void clearDatabaseOnStartup() {
+        transactionRepository.deleteAll(); // uses the lowercase instance variable!
+        log.warn(" TESTBED INITIALIZATION: Database automatically cleared for clean benchmark state.");
     }
 
     // @Transactional makes springboot treat this method as a transaction (will ensure program crashes do not affect database
