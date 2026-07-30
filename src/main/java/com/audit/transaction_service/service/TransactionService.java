@@ -46,7 +46,7 @@ public class TransactionService {
     // @Transactional makes springboot treat this method as a transaction (will ensure program crashes do not affect database
     @Transactional
     public ResponseDto processTransaction(RequestDto request) {
-        long startTime = System.currentTimeMillis();
+        long startTime = System.nanoTime();
 
         // Guard Clause
         if (request == null || request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
@@ -80,7 +80,6 @@ public class TransactionService {
         // Risk Status Evaluation
         String status = (riskScore >= RISK_THRESHOLD) ? "FLAGGED" : "APPROVED";
 
-        startTime = System.nanoTime();
         long executionTimeMs = (System.nanoTime() - startTime) / 1_000_000; // Convert nanoseconds to milliseconds
 
         // creates and saves created entity type object which includes information from request and response
