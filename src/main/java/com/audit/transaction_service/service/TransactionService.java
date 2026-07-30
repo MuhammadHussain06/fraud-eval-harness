@@ -80,10 +80,10 @@ public class TransactionService {
         // Risk Status Evaluation
         String status = (riskScore >= RISK_THRESHOLD) ? "FLAGGED" : "APPROVED";
 
-        // Record execution time before DB writes
-        long executionTimeMs = System.currentTimeMillis() - startTime;
+        startTime = System.nanoTime();
+        long executionTimeMs = (System.nanoTime() - startTime) / 1_000_000; // Convert nanoseconds to milliseconds
 
-        // creates and saves created entity entity type object which includes information from request and response
+        // creates and saves created entity type object which includes information from request and response
         if (dbSaveEnabled) {
             Transaction entity = new Transaction();
             entity.setTransactionId(request.getTransactionId());
