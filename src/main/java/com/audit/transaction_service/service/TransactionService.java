@@ -28,17 +28,22 @@ public class TransactionService {
     private final static double RISK_PENALTY_HIGH_VALUE = 0.5;
     private final static double RISK_THRESHOLD = 0.5;
 
+    // @Value reads from application properties directly, and assigns values to given initialized objects
+
     @Value("${app.db.save.enabled:true}")
     private boolean dbSaveEnabled;
 
     @Value("${app.ai.mock-risk-score:0.85}")
     private double mockAiRiskScore;
 
+
+    // constructor to insantiate webClient and transactionRepository
     public TransactionService(TransactionRepository transactionRepository, WebClient webClient) {
         this.transactionRepository = transactionRepository;
         this.webClient = webClient;
     }
 
+    // @Transactional makes springboot treat this method as a transaction (will ensure program crashes do not affect database
     @Transactional
     public ResponseDto processTransaction(RequestDto request) {
         long startTime = System.currentTimeMillis();
@@ -78,6 +83,7 @@ public class TransactionService {
         // Record execution time before DB writes
         long executionTimeMs = System.currentTimeMillis() - startTime;
 
+        // creates and saves created entity entity type object which includes information from request and response
         if (dbSaveEnabled) {
             Transaction entity = new Transaction();
             entity.setTransactionId(request.getTransactionId());
@@ -97,6 +103,7 @@ public class TransactionService {
             transactionRepository.save(entity);
             log.debug("[Transaction ID: {}] Saved to H2 database.", request.getTransactionId());
         } else {
+            // does not save info to database depending on db persistence
             log.debug("[Transaction ID: {}] DB persistence bypassed via config flag.", request.getTransactionId());
         }
 
@@ -118,6 +125,7 @@ public class TransactionService {
         return response;
     }
 
+    // create and send payload for python service and return risk score from response
     private double fetchRemoteAiRiskScore(RequestDto request, String endpoint) {
         log.info("[Transaction ID: {}] Sending HTTP POST to Python endpoint {}", request.getTransactionId(), endpoint);
 
@@ -159,12 +167,12 @@ public class TransactionService {
         if (amount > HIGH_VALUE_THRESHOLD.doubleValue()) {
             localRisk += RISK_PENALTY_HIGH_VALUE;
 
-            // Sub tree branch A: Evaluate V1 & V2 interaction
+            // Subtree branch A: Evaluate V1 & V2 interaction
             if (request.getV1() > 2.5 || request.getV2() < -1.0) {
                 localRisk += 0.2;
             }
         } else {
-            // Sub tree branch B: Low value, check V3 anomaly
+            // Subtree branch B: Low value, check V3 anomaly
             if (request.getV3() > 3.0) {
                 localRisk += 0.15;
             }
