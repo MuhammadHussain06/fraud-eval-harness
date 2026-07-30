@@ -159,12 +159,12 @@ public class TransactionService {
         if (amount > HIGH_VALUE_THRESHOLD.doubleValue()) {
             localRisk += RISK_PENALTY_HIGH_VALUE;
 
-            // Sub-tree branch A: Evaluate V1 & V2 interaction
+            // Sub tree branch A: Evaluate V1 & V2 interaction
             if (request.getV1() > 2.5 || request.getV2() < -1.0) {
                 localRisk += 0.2;
             }
         } else {
-            // Sub-tree branch B: Low value, check V3 anomaly
+            // Sub tree branch B: Low value, check V3 anomaly
             if (request.getV3() > 3.0) {
                 localRisk += 0.15;
             }
