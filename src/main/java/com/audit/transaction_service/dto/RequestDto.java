@@ -1,12 +1,33 @@
 package com.audit.transaction_service.dto;
 
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+
 import java.math.BigDecimal;
 
 public class RequestDto {
 
+
+    // Validates standard UUID format: 8-4-4-4-12 hex chars (e.g. 550e8400-e29b-41d4-a716-446655440000)
+    @NotNull(message = "transactionId is required")
+    @Pattern(
+            regexp = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            message = "transactionId must be a valid UUID format (e.g. 550e8400-e29b-41d4-a716-446655440000)"
+    )
     private String transactionId;
+
+    // Custom format rule: Must start with 'ACC-' followed by 4 to 10 digits (e.g. ACC-123456)
+    @NotNull(message = "accountId is required")
+    @Pattern(
+            regexp = "^ACC-\\d{4,10}$",
+            message = "accountId must follow the format 'ACC-XXXX' (e.g. ACC-12345)"
+    )
     private String accountId;
+
     private BigDecimal amount;
+
+    // Standard Java Enum restricts inputs to defined values only
+    @NotNull(message = "transactionType is required")
     private String transactionType;
 
     private double v1;

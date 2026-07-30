@@ -3,6 +3,7 @@ package com.audit.transaction_service.controller;
 import com.audit.transaction_service.dto.RequestDto;
 import com.audit.transaction_service.dto.ResponseDto;
 import com.audit.transaction_service.service.TransactionService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,7 +23,7 @@ public class TransactionController {
     // Specifies that this method only responds to HTTP POST requests sent to /api/v1/transactions.
     @PostMapping
     // : Takes the incoming raw JSON string in the request body and automatically maps it into a JAVA RequestDto object
-    public ResponseEntity<ResponseDto> processTransaction(@RequestBody RequestDto request) {
+    public ResponseEntity<ResponseDto> processTransaction(@Valid @RequestBody RequestDto request) {
         ResponseDto response = transactionService.processTransaction(request);
         // Wraps ResponseDto in HTTP response wrapper with HTTP 200 OK status code, converting Java ResponseDto back into JSON for client
         return ResponseEntity.ok(response);

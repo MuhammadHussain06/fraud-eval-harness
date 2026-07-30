@@ -82,6 +82,13 @@ public class Transaction {
         this.executionTimeMs = executionTimeMs;
     }
 
+    public enum TransactionType {
+        WIRE_TRANSFER,
+        CARD_PAYMENT,
+        ACH_TRANSFER,
+        ATM_WITHDRAWAL
+    }
+
     public Long getPrimaryId() {
         return primaryId;
     }
