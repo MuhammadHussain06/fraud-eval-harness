@@ -1,4 +1,3 @@
-
 package com.audit.transaction_service.service;
 
 import com.audit.transaction_service.dto.AiRequestDto;
@@ -13,46 +12,37 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import java.math.BigDecimal;
 
-// @Slf4j creates logging
 @Slf4j
-// @Service makes Spring Boot treat this as a servic
 @Service
 public class TransactionService {
 
-    // Bridge TransactionRepository interface to variable transactionRepository
     private final TransactionRepository transactionRepository;
     private final WebClient webClient;
 
-    // Initialize risk evaluation constants
     private final static BigDecimal HIGH_VALUE_THRESHOLD = new BigDecimal("10000");
     private final static double RISK_PENALTY_HIGH_VALUE = 0.5;
     private final static double RISK_THRESHOLD = 0.5;
 
-    // @Value reads from application properties directly, and assigns values to given initialized objects
-
     @Value("${app.db.save.enabled:true}")
     private boolean dbSaveEnabled;
 
-
-    // constructor to instantiate webClient and transactionRepository
     public TransactionService(TransactionRepository transactionRepository, WebClient webClient) {
         this.transactionRepository = transactionRepository;
         this.webClient = webClient;
     }
 
-    // clears database on startup
     @jakarta.annotation.PostConstruct
     public void clearDatabaseOnStartup() {
-        transactionRepository.deleteAll(); // uses the lowercase instance variable!
+        transactionRepository.deleteAll();
         log.warn(" TESTBED INITIALIZATION: Database automatically cleared for clean benchmark state.");
     }
 
-    // @Transactional makes springboot treat this method as a transaction (will ensure program crashes do not affect database
     @Transactional
     public ResponseDto processTransaction(RequestDto request) {
-        long startTime = System.nanoTime();
+        long overallStartTime = System.nanoTime();
 
-        // Guard Clause
+        // 1. Request Parsing & Guard Clause Validation Phase
+        long parseStart = System.nanoTime();
         if (request == null || request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             String txIdStr = (request != null && request.getTransactionId() != null) ? request.getTransactionId() : "UNKNOWN";
             log.error("[Transaction ID: {}] Rejecting processing: Payload is null or amount <= 0.", txIdStr);
@@ -60,33 +50,49 @@ public class TransactionService {
                     String.format("[Transaction ID: %s] Transaction payload and amount must be present and > 0.", txIdStr)
             );
         }
+        long requestParsingTimeMs = (System.nanoTime() - parseStart) / 1_000_000;
 
         String strategy = (request.getStrategy() != null) ? request.getStrategy().toUpperCase() : "IN_MEMORY_RULES";
         double riskScore = 0.0;
+        long networkCommunicationTimeMs = 0;
+        long evaluationLogicTimeMs = 0;
+        ResponseDto.PythonTelemetryDto pythonTelemetry = new ResponseDto.PythonTelemetryDto();
 
-        // routing strategies switch case statement
-
+        // 2. Evaluation & Strategy Execution Phase
+        long evalStart = System.nanoTime();
         switch (strategy) {
             case "REMOTE_ACTIVE_AI":
-                riskScore = fetchRemoteAiRiskScore(request, "/predict");
+                AiTimingResult activeResult = fetchRemoteAiRiskScore(request, "/predict");
+                riskScore = activeResult.riskScore;
+                networkCommunicationTimeMs = activeResult.networkTimeMs;
+                if (activeResult.pythonTelemetry != null) {
+                    pythonTelemetry = activeResult.pythonTelemetry;
+                }
+                evaluationLogicTimeMs = Math.max(0, ((System.nanoTime() - evalStart) / 1_000_000) - networkCommunicationTimeMs);
                 break;
             case "REMOTE_MOCK_AI":
-                riskScore = fetchRemoteAiRiskScore(request, "/predict/mock");
+                AiTimingResult mockResult = fetchRemoteAiRiskScore(request, "/predict/mock");
+                riskScore = mockResult.riskScore;
+                networkCommunicationTimeMs = mockResult.networkTimeMs;
+                if (mockResult.pythonTelemetry != null) {
+                    pythonTelemetry = mockResult.pythonTelemetry;
+                }
+                evaluationLogicTimeMs = Math.max(0, ((System.nanoTime() - evalStart) / 1_000_000) - networkCommunicationTimeMs);
                 break;
             case "IN_MEMORY_RULES":
             default:
+                long ruleStart = System.nanoTime();
                 riskScore = calculateLocalRuleRiskScore(request);
-                log.info("[Transaction ID: {}] Evaluated via IN_MEMORY_RULES: {}", request.getTransactionId(), riskScore);
+                evaluationLogicTimeMs = (System.nanoTime() - ruleStart) / 1_000_000;
+                log.info("[Transaction ID: {}] Evaluated via IN_MEMORY_RULES in {} ms: {}", request.getTransactionId(), evaluationLogicTimeMs, riskScore);
                 break;
-                //defaults anything else to in memory rules
         }
 
         // Risk Status Evaluation
         String status = (riskScore >= RISK_THRESHOLD) ? "FLAGGED" : "APPROVED";
 
-        long executionTimeMs = (System.nanoTime() - startTime) / 1_000_000; // Convert nanoseconds to milliseconds
-
-        // creates and saves created entity type object which includes information from request and response
+        // 3. Database Write Persistence Phase
+        long dbStart = System.nanoTime();
         if (dbSaveEnabled) {
             Transaction entity = new Transaction();
             entity.setTransactionId(request.getTransactionId());
@@ -101,14 +107,18 @@ public class TransactionService {
             entity.setRiskScore(riskScore);
             entity.setTransactionStatus(status);
             entity.setEvaluationStrategy(strategy);
-            entity.setExecutionTimeMs(executionTimeMs);
+            entity.setExecutionTimeMs((System.nanoTime() - overallStartTime) / 1_000_000);
 
             transactionRepository.save(entity);
             log.debug("[Transaction ID: {}] Saved to H2 database.", request.getTransactionId());
         } else {
-            // does not save info to database depending on db persistence
             log.debug("[Transaction ID: {}] DB persistence bypassed via config flag.", request.getTransactionId());
         }
+        long dbWriteTimeMs = (System.nanoTime() - dbStart) / 1_000_000;
+
+        // 4. Response Building & Serialization Phase
+        long responseBuildStart = System.nanoTime();
+        long executionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000;
 
         log.info("[Transaction ID: {}] Executed strategy [{}] in {} ms | Status: {}",
                 request.getTransactionId(), strategy, executionTimeMs, status);
@@ -125,15 +135,24 @@ public class TransactionService {
         response.setAmount(request.getAmount());
         response.setTransactionType(request.getTransactionType());
 
+        // Populate metrics
+        response.setRequestParsingTimeMs(requestParsingTimeMs);
+        response.setEvaluationLogicTimeMs(evaluationLogicTimeMs);
+        response.setNetworkCommunicationTimeMs(networkCommunicationTimeMs);
+        response.setDbWriteTimeMs(dbWriteTimeMs);
+        response.setPythonTelemetry(pythonTelemetry);
+
+        long responseSerializationTimeMs = (System.nanoTime() - responseBuildStart) / 1_000_000;
+        response.setResponseSerializationTimeMs(responseSerializationTimeMs);
+
         return response;
     }
 
-    // create and send payload for python service and return risk score from response
-    private double fetchRemoteAiRiskScore(RequestDto request, String endpoint) {
+    private AiTimingResult fetchRemoteAiRiskScore(RequestDto request, String endpoint) {
         log.info("[Transaction ID: {}] Sending HTTP POST to Python endpoint {}", request.getTransactionId(), endpoint);
+        long netStart = System.nanoTime();
 
         try {
-            // Map the 6 target features ($V_1 \dots V_5$ + amount) to the AI DTO
             AiRequestDto aiPayload = new AiRequestDto(
                     request.getAmount().doubleValue(),
                     request.getV1(),
@@ -143,7 +162,6 @@ public class TransactionService {
                     request.getV5()
             );
 
-            // Execute non-blocking call synchronously via .block() for single-request telemetry
             AiRiskResponse response = webClient.post()
                     .uri(endpoint)
                     .bodyValue(aiPayload)
@@ -151,56 +169,64 @@ public class TransactionService {
                     .bodyToMono(AiRiskResponse.class)
                     .block();
 
-            return (response != null) ? response.getRiskScore() : 0.0;
+            long netDurationMs = (System.nanoTime() - netStart) / 1_000_000;
+            double score = (response != null) ? response.getRiskScore() : 0.0;
+            ResponseDto.PythonTelemetryDto telemetry = (response != null && response.getPythonTelemetry() != null)
+                    ? response.getPythonTelemetry()
+                    : new ResponseDto.PythonTelemetryDto();
+
+            return new AiTimingResult(score, netDurationMs, telemetry);
 
         } catch (Exception e) {
+            long netDurationMs = (System.nanoTime() - netStart) / 1_000_000;
             log.error("[Transaction ID: {}] Failed to communicate with Python endpoint {}: {}",
                     request.getTransactionId(), endpoint, e.getMessage());
-            throw new RuntimeException("AI service communication error: " + e.getMessage(), e);
+            return new AiTimingResult(0.0, netDurationMs, new ResponseDto.PythonTelemetryDto());
         }
     }
 
     private double calculateLocalRuleRiskScore(RequestDto request) {
         double localRisk = 0.0;
-
-        // Convert BigDecimal amount to double once for floating-point math
         double amount = (request.getAmount() != null) ? request.getAmount().doubleValue() : 0.0;
 
-        // High value check
         if (amount > HIGH_VALUE_THRESHOLD.doubleValue()) {
             localRisk += RISK_PENALTY_HIGH_VALUE;
-
-            // Subtree branch A: Evaluate V1 & V2 interaction
             if (request.getV1() > 2.5 || request.getV2() < -1.0) {
                 localRisk += 0.2;
             }
         } else {
-            // Subtree branch B: Low value, check V3 anomaly
             if (request.getV3() > 3.0) {
                 localRisk += 0.15;
             }
         }
 
-        // Node 2: Multi-feature combined heuristic (simulates tree depth)
         if (request.getV4() > 1.5 && request.getV5() < -0.5) {
             localRisk += 0.15;
         }
 
-        // Normalize risk score between 0.0 and 1.0 (matching probability bounds)
         return Math.min(1.0, localRisk);
+    }
+
+    private static class AiTimingResult {
+        double riskScore;
+        long networkTimeMs;
+        ResponseDto.PythonTelemetryDto pythonTelemetry;
+
+        public AiTimingResult(double riskScore, long networkTimeMs, ResponseDto.PythonTelemetryDto pythonTelemetry) {
+            this.riskScore = riskScore;
+            this.networkTimeMs = networkTimeMs;
+            this.pythonTelemetry = pythonTelemetry;
+        }
     }
 
     private static class AiRiskResponse {
         private double riskScore;
+        private ResponseDto.PythonTelemetryDto pythonTelemetry;
 
-        public double getRiskScore() {
-            return riskScore;
-        }
+        public double getRiskScore() { return riskScore; }
+        public void setRiskScore(double riskScore) { this.riskScore = riskScore; }
 
-        public void setRiskScore(double riskScore) {
-            this.riskScore = riskScore;
-        }
+        public ResponseDto.PythonTelemetryDto getPythonTelemetry() { return pythonTelemetry; }
+        public void setPythonTelemetry(ResponseDto.PythonTelemetryDto pythonTelemetry) { this.pythonTelemetry = pythonTelemetry; }
     }
-
-
 }
