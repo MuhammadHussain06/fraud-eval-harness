@@ -50,12 +50,12 @@ public class TransactionService {
                     String.format("[Transaction ID: %s] Transaction payload and amount must be present and > 0.", txIdStr)
             );
         }
-        long requestParsingTimeMs = (System.nanoTime() - parseStart) / 1_000_000;
+        double requestParsingTimeMs = (System.nanoTime() - parseStart) / 1_000_000.0;
 
         String strategy = (request.getStrategy() != null) ? request.getStrategy().toUpperCase() : "IN_MEMORY_RULES";
         double riskScore = 0.0;
-        long networkCommunicationTimeMs = 0;
-        long evaluationLogicTimeMs = 0;
+        double networkCommunicationTimeMs = 0.0;
+        double evaluationLogicTimeMs = 0.0;
         ResponseDto.PythonTelemetryDto pythonTelemetry = new ResponseDto.PythonTelemetryDto();
 
         // 2. Evaluation & Strategy Execution Phase
@@ -68,7 +68,7 @@ public class TransactionService {
                 if (activeResult.pythonTelemetry != null) {
                     pythonTelemetry = activeResult.pythonTelemetry;
                 }
-                evaluationLogicTimeMs = Math.max(0, ((System.nanoTime() - evalStart) / 1_000_000) - networkCommunicationTimeMs);
+                evaluationLogicTimeMs = Math.max(0.0, ((System.nanoTime() - evalStart) / 1_000_000.0) - networkCommunicationTimeMs);
                 break;
             case "REMOTE_MOCK_AI":
                 AiTimingResult mockResult = fetchRemoteAiRiskScore(request, "/predict/mock");
@@ -77,13 +77,13 @@ public class TransactionService {
                 if (mockResult.pythonTelemetry != null) {
                     pythonTelemetry = mockResult.pythonTelemetry;
                 }
-                evaluationLogicTimeMs = Math.max(0, ((System.nanoTime() - evalStart) / 1_000_000) - networkCommunicationTimeMs);
+                evaluationLogicTimeMs = Math.max(0.0, ((System.nanoTime() - evalStart) / 1_000_000.0) - networkCommunicationTimeMs);
                 break;
             case "IN_MEMORY_RULES":
             default:
                 long ruleStart = System.nanoTime();
                 riskScore = calculateLocalRuleRiskScore(request);
-                evaluationLogicTimeMs = (System.nanoTime() - ruleStart) / 1_000_000;
+                evaluationLogicTimeMs = (System.nanoTime() - ruleStart) / 1_000_000.0;
                 log.info("[Transaction ID: {}] Evaluated via IN_MEMORY_RULES in {} ms: {}", request.getTransactionId(), evaluationLogicTimeMs, riskScore);
                 break;
         }
@@ -93,6 +93,7 @@ public class TransactionService {
 
         // 3. Database Write Persistence Phase
         long dbStart = System.nanoTime();
+        double currentExecutionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
         if (dbSaveEnabled) {
             Transaction entity = new Transaction();
             entity.setTransactionId(request.getTransactionId());
@@ -107,18 +108,18 @@ public class TransactionService {
             entity.setRiskScore(riskScore);
             entity.setTransactionStatus(status);
             entity.setEvaluationStrategy(strategy);
-            entity.setExecutionTimeMs((System.nanoTime() - overallStartTime) / 1_000_000);
+            entity.setExecutionTimeMs(currentExecutionTimeMs);
 
             transactionRepository.save(entity);
             log.debug("[Transaction ID: {}] Saved to H2 database.", request.getTransactionId());
         } else {
             log.debug("[Transaction ID: {}] DB persistence bypassed via config flag.", request.getTransactionId());
         }
-        long dbWriteTimeMs = (System.nanoTime() - dbStart) / 1_000_000;
+        double dbWriteTimeMs = (System.nanoTime() - dbStart) / 1_000_000.0;
 
         // 4. Response Building & Serialization Phase
         long responseBuildStart = System.nanoTime();
-        long executionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000;
+        double executionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
 
         log.info("[Transaction ID: {}] Executed strategy [{}] in {} ms | Status: {}",
                 request.getTransactionId(), strategy, executionTimeMs, status);
@@ -142,7 +143,7 @@ public class TransactionService {
         response.setDbWriteTimeMs(dbWriteTimeMs);
         response.setPythonTelemetry(pythonTelemetry);
 
-        long responseSerializationTimeMs = (System.nanoTime() - responseBuildStart) / 1_000_000;
+        double responseSerializationTimeMs = (System.nanoTime() - responseBuildStart) / 1_000_000.0;
         response.setResponseSerializationTimeMs(responseSerializationTimeMs);
 
         return response;
@@ -169,7 +170,7 @@ public class TransactionService {
                     .bodyToMono(AiRiskResponse.class)
                     .block();
 
-            long netDurationMs = (System.nanoTime() - netStart) / 1_000_000;
+            double netDurationMs = (System.nanoTime() - netStart) / 1_000_000.0;
             double score = (response != null) ? response.getRiskScore() : 0.0;
             ResponseDto.PythonTelemetryDto telemetry = (response != null && response.getPythonTelemetry() != null)
                     ? response.getPythonTelemetry()
@@ -178,7 +179,7 @@ public class TransactionService {
             return new AiTimingResult(score, netDurationMs, telemetry);
 
         } catch (Exception e) {
-            long netDurationMs = (System.nanoTime() - netStart) / 1_000_000;
+            double netDurationMs = (System.nanoTime() - netStart) / 1_000_000.0;
             log.error("[Transaction ID: {}] Failed to communicate with Python endpoint {}: {}",
                     request.getTransactionId(), endpoint, e.getMessage());
             return new AiTimingResult(0.0, netDurationMs, new ResponseDto.PythonTelemetryDto());
@@ -209,10 +210,10 @@ public class TransactionService {
 
     private static class AiTimingResult {
         double riskScore;
-        long networkTimeMs;
+        double networkTimeMs;
         ResponseDto.PythonTelemetryDto pythonTelemetry;
 
-        public AiTimingResult(double riskScore, long networkTimeMs, ResponseDto.PythonTelemetryDto pythonTelemetry) {
+        public AiTimingResult(double riskScore, double networkTimeMs, ResponseDto.PythonTelemetryDto pythonTelemetry) {
             this.riskScore = riskScore;
             this.networkTimeMs = networkTimeMs;
             this.pythonTelemetry = pythonTelemetry;

@@ -11,13 +11,13 @@ public class ResponseDto {
     private double riskScore;
     private String transactionStatus;
 
-    // Java-side telemetry timing fields
-    private long executionTimeMs;
-    private long requestParsingTimeMs;
-    private long evaluationLogicTimeMs;
-    private long networkCommunicationTimeMs;
-    private long dbWriteTimeMs;
-    private long responseSerializationTimeMs;
+    // Java-side telemetry timing fields (upgraded to double for precise fractional ms)
+    private double executionTimeMs;
+    private double requestParsingTimeMs;
+    private double evaluationLogicTimeMs;
+    private double networkCommunicationTimeMs;
+    private double dbWriteTimeMs;
+    private double responseSerializationTimeMs;
 
     // Python-side telemetry timing metrics container
     private PythonTelemetryDto pythonTelemetry = new PythonTelemetryDto();
@@ -27,7 +27,7 @@ public class ResponseDto {
 
     public ResponseDto() {}
 
-    public ResponseDto(String transactionId, double riskScore, String transactionStatus, String strategy, long executionTimeMs) {
+    public ResponseDto(String transactionId, double riskScore, String transactionStatus, String strategy, double executionTimeMs) {
         this.transactionId = transactionId;
         this.riskScore = riskScore;
         this.transactionStatus = transactionStatus;
@@ -53,23 +53,23 @@ public class ResponseDto {
     public String getTransactionStatus() { return transactionStatus; }
     public void setTransactionStatus(String transactionStatus) { this.transactionStatus = transactionStatus; }
 
-    public long getExecutionTimeMs() { return executionTimeMs; }
-    public void setExecutionTimeMs(long executionTimeMs) { this.executionTimeMs = executionTimeMs; }
+    public double getExecutionTimeMs() { return executionTimeMs; }
+    public void setExecutionTimeMs(double executionTimeMs) { this.executionTimeMs = executionTimeMs; }
 
-    public long getRequestParsingTimeMs() { return requestParsingTimeMs; }
-    public void setRequestParsingTimeMs(long requestParsingTimeMs) { this.requestParsingTimeMs = requestParsingTimeMs; }
+    public double getRequestParsingTimeMs() { return requestParsingTimeMs; }
+    public void setRequestParsingTimeMs(double requestParsingTimeMs) { this.requestParsingTimeMs = requestParsingTimeMs; }
 
-    public long getEvaluationLogicTimeMs() { return evaluationLogicTimeMs; }
-    public void setEvaluationLogicTimeMs(long evaluationLogicTimeMs) { this.evaluationLogicTimeMs = evaluationLogicTimeMs; }
+    public double getEvaluationLogicTimeMs() { return evaluationLogicTimeMs; }
+    public void setEvaluationLogicTimeMs(double evaluationLogicTimeMs) { this.evaluationLogicTimeMs = evaluationLogicTimeMs; }
 
-    public long getNetworkCommunicationTimeMs() { return networkCommunicationTimeMs; }
-    public void setNetworkCommunicationTimeMs(long networkCommunicationTimeMs) { this.networkCommunicationTimeMs = networkCommunicationTimeMs; }
+    public double getNetworkCommunicationTimeMs() { return networkCommunicationTimeMs; }
+    public void setNetworkCommunicationTimeMs(double networkCommunicationTimeMs) { this.networkCommunicationTimeMs = networkCommunicationTimeMs; }
 
-    public long getDbWriteTimeMs() { return dbWriteTimeMs; }
-    public void setDbWriteTimeMs(long dbWriteTimeMs) { this.dbWriteTimeMs = dbWriteTimeMs; }
+    public double getDbWriteTimeMs() { return dbWriteTimeMs; }
+    public void setDbWriteTimeMs(double dbWriteTimeMs) { this.dbWriteTimeMs = dbWriteTimeMs; }
 
-    public long getResponseSerializationTimeMs() { return responseSerializationTimeMs; }
-    public void setResponseSerializationTimeMs(long responseSerializationTimeMs) { this.responseSerializationTimeMs = responseSerializationTimeMs; }
+    public double getResponseSerializationTimeMs() { return responseSerializationTimeMs; }
+    public void setResponseSerializationTimeMs(double responseSerializationTimeMs) { this.responseSerializationTimeMs = responseSerializationTimeMs; }
 
     public PythonTelemetryDto getPythonTelemetry() { return pythonTelemetry; }
     public void setPythonTelemetry(PythonTelemetryDto pythonTelemetry) { this.pythonTelemetry = pythonTelemetry; }
@@ -80,7 +80,7 @@ public class ResponseDto {
     // Nested DTO mapping Python's internal microservice performance stats
     public static class PythonTelemetryDto {
         private double parsingRequestTimeMs = 0.0;
-        private double computationTimeMs = 0.0; // Captures ML inference or mock calculation time
+        private double computationTimeMs = 0.0;
         private double serializationResponseTimeMs = 0.0;
         private double totalPythonExecutionTimeMs = 0.0;
 
