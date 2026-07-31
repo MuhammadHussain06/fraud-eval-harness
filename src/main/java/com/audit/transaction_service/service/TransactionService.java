@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+
 import java.math.BigDecimal;
 
 @Slf4j
@@ -19,8 +20,6 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final WebClient webClient;
 
-    private final static BigDecimal HIGH_VALUE_THRESHOLD = new BigDecimal("10000");
-    private final static double RISK_PENALTY_HIGH_VALUE = 0.5;
     private final static double RISK_THRESHOLD = 0.5;
 
     @Value("${app.db.save.enabled:true}")
@@ -34,7 +33,7 @@ public class TransactionService {
     @jakarta.annotation.PostConstruct
     public void clearDatabaseOnStartup() {
         transactionRepository.deleteAll();
-        log.warn(" TESTBED INITIALIZATION: Database automatically cleared for clean benchmark state.");
+        log.warn("TESTBED INITIALIZATION: Database automatically cleared for clean benchmark state.");
     }
 
     @Transactional
@@ -52,46 +51,39 @@ public class TransactionService {
         }
         double requestParsingTimeMs = (System.nanoTime() - parseStart) / 1_000_000.0;
 
-        String strategy = (request.getStrategy() != null) ? request.getStrategy().toUpperCase() : "IN_MEMORY_RULES";
+        String strategy = request.getStrategy().toUpperCase();
         double riskScore = 0.0;
         double networkCommunicationTimeMs = 0.0;
-        double evaluationLogicTimeMs = 0.0;
         ResponseDto.PythonTelemetryDto pythonTelemetry = new ResponseDto.PythonTelemetryDto();
 
-        // 2. Evaluation & Strategy Execution Phase
-        long evalStart = System.nanoTime();
+        //  Distributed AI Strategy Execution & Remote Delegation Phase
         switch (strategy) {
-            case "REMOTE_ACTIVE_AI":
+            case "DISTRIBUTED_AI_SYNCHRONOUS":
                 AiTimingResult activeResult = fetchRemoteAiRiskScore(request, "/predict");
                 riskScore = activeResult.riskScore;
                 networkCommunicationTimeMs = activeResult.networkTimeMs;
                 if (activeResult.pythonTelemetry != null) {
                     pythonTelemetry = activeResult.pythonTelemetry;
                 }
-                evaluationLogicTimeMs = Math.max(0.0, ((System.nanoTime() - evalStart) / 1_000_000.0) - networkCommunicationTimeMs);
                 break;
-            case "REMOTE_MOCK_AI":
+
+            case "DISTRIBUTED_MOCK_GATEWAY":
                 AiTimingResult mockResult = fetchRemoteAiRiskScore(request, "/predict/mock");
                 riskScore = mockResult.riskScore;
                 networkCommunicationTimeMs = mockResult.networkTimeMs;
                 if (mockResult.pythonTelemetry != null) {
                     pythonTelemetry = mockResult.pythonTelemetry;
                 }
-                evaluationLogicTimeMs = Math.max(0.0, ((System.nanoTime() - evalStart) / 1_000_000.0) - networkCommunicationTimeMs);
                 break;
-            case "IN_MEMORY_RULES":
+
             default:
-                long ruleStart = System.nanoTime();
-                riskScore = calculateLocalRuleRiskScore(request);
-                evaluationLogicTimeMs = (System.nanoTime() - ruleStart) / 1_000_000.0;
-                log.info("[Transaction ID: {}] Evaluated via IN_MEMORY_RULES in {} ms: {}", request.getTransactionId(), evaluationLogicTimeMs, riskScore);
-                break;
+                throw new IllegalArgumentException("Invalid evaluation strategy topology provided: " + strategy);
         }
 
-        // Risk Status Evaluation
+        // Risk Status
         String status = (riskScore >= RISK_THRESHOLD) ? "FLAGGED" : "APPROVED";
 
-        // 3. Database Write Persistence Phase
+        // Database Write Persistence
         long dbStart = System.nanoTime();
         double currentExecutionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
         if (dbSaveEnabled) {
@@ -113,18 +105,17 @@ public class TransactionService {
             transactionRepository.save(entity);
             log.debug("[Transaction ID: {}] Saved to H2 database.", request.getTransactionId());
         } else {
-            log.debug("[Transaction ID: {}] DB persistence bypassed via config flag.", request.getTransactionId());
+            log.debug("[Transaction ID: {}] DB persistence bypassed via configuration flag.", request.getTransactionId());
         }
         double dbWriteTimeMs = (System.nanoTime() - dbStart) / 1_000_000.0;
 
-        // 4. Response Building & Serialization Phase
+        //  Response Building & Serialization
         long responseBuildStart = System.nanoTime();
         double executionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
 
         log.info("[Transaction ID: {}] Executed strategy [{}] in {} ms | Status: {}",
                 request.getTransactionId(), strategy, executionTimeMs, status);
 
-        // Build and return ResponseDto
         ResponseDto response = new ResponseDto(
                 request.getTransactionId(),
                 riskScore,
@@ -136,9 +127,8 @@ public class TransactionService {
         response.setAmount(request.getAmount());
         response.setTransactionType(request.getTransactionType());
 
-        // Populate metrics
+        // Populate telemetry metrics
         response.setRequestParsingTimeMs(requestParsingTimeMs);
-        response.setEvaluationLogicTimeMs(evaluationLogicTimeMs);
         response.setNetworkCommunicationTimeMs(networkCommunicationTimeMs);
         response.setDbWriteTimeMs(dbWriteTimeMs);
         response.setPythonTelemetry(pythonTelemetry);
@@ -184,28 +174,6 @@ public class TransactionService {
                     request.getTransactionId(), endpoint, e.getMessage());
             return new AiTimingResult(0.0, netDurationMs, new ResponseDto.PythonTelemetryDto());
         }
-    }
-
-    private double calculateLocalRuleRiskScore(RequestDto request) {
-        double localRisk = 0.0;
-        double amount = (request.getAmount() != null) ? request.getAmount().doubleValue() : 0.0;
-
-        if (amount > HIGH_VALUE_THRESHOLD.doubleValue()) {
-            localRisk += RISK_PENALTY_HIGH_VALUE;
-            if (request.getV1() > 2.5 || request.getV2() < -1.0) {
-                localRisk += 0.2;
-            }
-        } else {
-            if (request.getV3() > 3.0) {
-                localRisk += 0.15;
-            }
-        }
-
-        if (request.getV4() > 1.5 && request.getV5() < -0.5) {
-            localRisk += 0.15;
-        }
-
-        return Math.min(1.0, localRisk);
     }
 
     private static class AiTimingResult {

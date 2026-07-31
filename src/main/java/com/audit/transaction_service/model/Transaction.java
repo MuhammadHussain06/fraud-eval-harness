@@ -46,23 +46,6 @@ public class Transaction {
 
     public Transaction() {}
 
-    public Transaction(String accountId, BigDecimal amount, String transactionType, String transactionId, double v1, double v2, double v3, double v4, double v5, double riskScore, double executionTimeMs, String evaluationStrategy, String transactionStatus) {
-        this.transactionId = transactionId;
-        this.accountId = accountId;
-        this.transactionAmount = amount;
-        this.transactionType = transactionType;
-        this.v1 = v1;
-        this.v2 = v2;
-        this.v3 = v3;
-        this.v4 = v4;
-        this.v5 = v5;
-        this.riskScore = riskScore;
-        this.transactionStatus = transactionStatus;
-        this.evaluationStrategy = evaluationStrategy;
-        this.executionTimeMs = executionTimeMs;
-    }
-
-    // Getters and Setters
     public Long getPrimaryId() { return primaryId; }
     public void setPrimaryId(Long primaryId) { this.primaryId = primaryId; }
 

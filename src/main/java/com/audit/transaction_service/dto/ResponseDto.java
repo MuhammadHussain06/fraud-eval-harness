@@ -11,18 +11,16 @@ public class ResponseDto {
     private double riskScore;
     private String transactionStatus;
 
-    // Java-side telemetry timing fields (upgraded to double for precise fractional ms)
+    // Java-side telemetry instrumentation timing metrics (ms)
     private double executionTimeMs;
     private double requestParsingTimeMs;
-    private double evaluationLogicTimeMs;
     private double networkCommunicationTimeMs;
     private double dbWriteTimeMs;
     private double responseSerializationTimeMs;
 
-    // Python-side telemetry timing metrics container
+    // Python-side microservice internal telemetry metrics container
     private PythonTelemetryDto pythonTelemetry = new PythonTelemetryDto();
 
-    // Strategy toggle (e.g: IN_MEMORY_RULES | REMOTE_MOCK_AI | REMOTE_ACTIVE_AI )
     private String strategy;
 
     public ResponseDto() {}
@@ -59,9 +57,6 @@ public class ResponseDto {
     public double getRequestParsingTimeMs() { return requestParsingTimeMs; }
     public void setRequestParsingTimeMs(double requestParsingTimeMs) { this.requestParsingTimeMs = requestParsingTimeMs; }
 
-    public double getEvaluationLogicTimeMs() { return evaluationLogicTimeMs; }
-    public void setEvaluationLogicTimeMs(double evaluationLogicTimeMs) { this.evaluationLogicTimeMs = evaluationLogicTimeMs; }
-
     public double getNetworkCommunicationTimeMs() { return networkCommunicationTimeMs; }
     public void setNetworkCommunicationTimeMs(double networkCommunicationTimeMs) { this.networkCommunicationTimeMs = networkCommunicationTimeMs; }
 
@@ -77,7 +72,6 @@ public class ResponseDto {
     public String getStrategy() { return strategy; }
     public void setStrategy(String strategy) { this.strategy = strategy; }
 
-    // Nested DTO mapping Python's internal microservice performance stats
     public static class PythonTelemetryDto {
         private double parsingRequestTimeMs = 0.0;
         private double computationTimeMs = 0.0;

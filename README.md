@@ -8,14 +8,14 @@ This backend acts as the bridge between incoming client transactions and a downs
 
 ## Architectural Context & Purpose
 
- This service acts as the central router and metrics engine designed to:
+This service acts as the central router and metrics engine designed to:
 
 1. **Ingest & Validate**: Receive incoming transaction requests and validate critical features.
-2. **Interface with AI/ML Services**: Communicate asynchronously via `WebClient` with a Python FastAPI microservice that hosts ML models trained on `creditcard.csv`.
+2. **Interface with AI/ML Services**: Communicate via non-blocking `WebClient` with a Python FastAPI microservice that hosts ML models trained on `creditcard.csv`.
 3. **Feature Extraction**: Pass the core feature subset required by the trained model:
    * **`amount`**: The transaction value.
    * **`v1` – `v5`**: The first five PCA-transformed feature components extracted from the dataset.
-4. **Benchmark & Persist**: Evaluate performance across different strategies (e.g., lightweight `IN_MEMORY_RULES` vs. external `REMOTE_ACTIVE_AI`), recording latency (`executionTimeMs`), risk scores, and decision outcomes to an embedded H2 database.
+4. **Benchmark & Persist**: Evaluate distributed system performance across experimental strategies (e.g., live synchronous AI inference via `DISTRIBUTED_AI_SYNCHRONOUS` vs. network-baseline mock routing via `DISTRIBUTED_MOCK_GATEWAY`), recording precise multi-tiered latencies (`executionTimeMs`, network communication time, DB write time) and decision outcomes to an embedded H2 database.
 
 ---
 
@@ -48,5 +48,5 @@ Evaluates a transaction payload and returns the risk score, decision status (`AP
   "v3": 0.5,
   "v4": 1.8,
   "v5": -0.8,
-  "strategy": "IN_MEMORY_RULES"
+  "strategy": "DISTRIBUTED_AI_SYNCHRONOUS"
 }
