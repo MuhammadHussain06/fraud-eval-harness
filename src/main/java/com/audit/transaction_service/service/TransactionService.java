@@ -31,15 +31,6 @@ public class TransactionService {
         this.webClient = webClient;
     }
 
-    // Automatically wipes the H2 database on startup to guarantee a clean testbed state for benchmarks
-    @jakarta.annotation.PostConstruct
-    public void clearDatabaseOnStartup() {
-        transactionRepository.deleteAll().subscribe(
-                null,
-                error -> log.error("Failed to clear database on startup: {}", error.getMessage()),
-                () -> log.warn("TESTBED INITIALIZATION: Database automatically cleared for clean benchmark state.")
-        );
-    }
 
     //  return type is now Mono<ResponseDto>
     public Mono<ResponseDto> processTransaction(RequestDto request) {
