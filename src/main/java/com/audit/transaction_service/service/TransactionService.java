@@ -5,11 +5,11 @@ import com.audit.transaction_service.dto.RequestDto;
 import com.audit.transaction_service.dto.ResponseDto;
 import com.audit.transaction_service.model.Transaction;
 import com.audit.transaction_service.repository.TransactionRepository;
-import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 
@@ -25,169 +25,178 @@ public class TransactionService {
     @Value("${app.db.save.enabled:true}")
     private boolean dbSaveEnabled;
 
+    // Constructor injection for repository and reactive web client
     public TransactionService(TransactionRepository transactionRepository, WebClient webClient) {
         this.transactionRepository = transactionRepository;
         this.webClient = webClient;
     }
 
+    // Automatically wipes the H2 database on startup to guarantee a clean testbed state for benchmarks
     @jakarta.annotation.PostConstruct
     public void clearDatabaseOnStartup() {
-        transactionRepository.deleteAll();
-        log.warn("TESTBED INITIALIZATION: Database automatically cleared for clean benchmark state.");
+        transactionRepository.deleteAll().subscribe(
+                null,
+                error -> log.error("Failed to clear database on startup: {}", error.getMessage()),
+                () -> log.warn("TESTBED INITIALIZATION: Database automatically cleared for clean benchmark state.")
+        );
     }
 
-    @Transactional
-    public ResponseDto processTransaction(RequestDto request) {
+    //  return type is now Mono<ResponseDto>
+    public Mono<ResponseDto> processTransaction(RequestDto request) {
         long overallStartTime = System.nanoTime();
 
-        // 1. Request Parsing & Guard Clause Validation Phase
+        // Request Parsing & Guard Clause Validation Phase
         long parseStart = System.nanoTime();
         if (request == null || request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             String txIdStr = (request != null && request.getTransactionId() != null) ? request.getTransactionId() : "UNKNOWN";
             log.error("[Transaction ID: {}] Rejecting processing: Payload is null or amount <= 0.", txIdStr);
-            throw new IllegalArgumentException(
+            // Returns a reactive error signal down the chain
+            return Mono.error(new IllegalArgumentException(
                     String.format("[Transaction ID: %s] Transaction payload and amount must be present and > 0.", txIdStr)
-            );
+            ));
         }
         double requestParsingTimeMs = (System.nanoTime() - parseStart) / 1_000_000.0;
 
         String strategy = request.getStrategy().toUpperCase();
-        double riskScore = 0.0;
-        double networkCommunicationTimeMs = 0.0;
-        ResponseDto.PythonTelemetryDto pythonTelemetry = new ResponseDto.PythonTelemetryDto();
+        String endpoint;
 
-        //  Distributed AI Strategy Execution & Remote Delegation Phase
+        //Multi-Strategy Endpoint Resolution
         switch (strategy) {
             case "DISTRIBUTED_AI_SYNCHRONOUS":
-                AiTimingResult activeResult = fetchRemoteAiRiskScore(request, "/predict");
-                riskScore = activeResult.riskScore;
-                networkCommunicationTimeMs = activeResult.networkTimeMs;
-                if (activeResult.pythonTelemetry != null) {
-                    pythonTelemetry = activeResult.pythonTelemetry;
-                }
+                endpoint = "/predict";
                 break;
-
             case "DISTRIBUTED_MOCK_GATEWAY":
-                AiTimingResult mockResult = fetchRemoteAiRiskScore(request, "/predict/mock");
-                riskScore = mockResult.riskScore;
-                networkCommunicationTimeMs = mockResult.networkTimeMs;
-                if (mockResult.pythonTelemetry != null) {
-                    pythonTelemetry = mockResult.pythonTelemetry;
-                }
+                endpoint = "/predict/mock";
                 break;
-
             default:
-                throw new IllegalArgumentException("Invalid evaluation strategy topology provided: " + strategy);
+                return Mono.error(new IllegalArgumentException("Invalid evaluation strategy topology provided: " + strategy));
         }
 
-        // Risk Status
-        String status = (riskScore >= RISK_THRESHOLD) ? "FLAGGED" : "APPROVED";
-
-        // Database Write Persistence
-        long dbStart = System.nanoTime();
-        double currentExecutionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
-        if (dbSaveEnabled) {
-            Transaction entity = new Transaction();
-            entity.setTransactionId(request.getTransactionId());
-            entity.setAccountId(request.getAccountId());
-            entity.setTransactionAmount(request.getAmount());
-            entity.setTransactionType(request.getTransactionType());
-            entity.setV1(request.getV1());
-            entity.setV2(request.getV2());
-            entity.setV3(request.getV3());
-            entity.setV4(request.getV4());
-            entity.setV5(request.getV5());
-            entity.setRiskScore(riskScore);
-            entity.setTransactionStatus(status);
-            entity.setEvaluationStrategy(strategy);
-            entity.setExecutionTimeMs(currentExecutionTimeMs);
-
-            transactionRepository.save(entity);
-            log.debug("[Transaction ID: {}] Saved to H2 database.", request.getTransactionId());
-        } else {
-            log.debug("[Transaction ID: {}] DB persistence bypassed via configuration flag.", request.getTransactionId());
-        }
-        double dbWriteTimeMs = (System.nanoTime() - dbStart) / 1_000_000.0;
-
-        //  Response Building & Serialization
-        long responseBuildStart = System.nanoTime();
-        double executionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
-
-        log.info("[Transaction ID: {}] Executed strategy [{}] in {} ms | Status: {}",
-                request.getTransactionId(), strategy, executionTimeMs, status);
-
-        ResponseDto response = new ResponseDto(
-                request.getTransactionId(),
-                riskScore,
-                status,
-                strategy,
-                executionTimeMs
-        );
-        response.setAccountId(request.getAccountId());
-        response.setAmount(request.getAmount());
-        response.setTransactionType(request.getTransactionType());
-
-        // Populate telemetry metrics
-        response.setRequestParsingTimeMs(requestParsingTimeMs);
-        response.setNetworkCommunicationTimeMs(networkCommunicationTimeMs);
-        response.setDbWriteTimeMs(dbWriteTimeMs);
-        response.setPythonTelemetry(pythonTelemetry);
-
-        double responseSerializationTimeMs = (System.nanoTime() - responseBuildStart) / 1_000_000.0;
-        response.setResponseSerializationTimeMs(responseSerializationTimeMs);
-
-        return response;
-    }
-
-    private AiTimingResult fetchRemoteAiRiskScore(RequestDto request, String endpoint) {
         log.info("[Transaction ID: {}] Sending HTTP POST to Python endpoint {}", request.getTransactionId(), endpoint);
         long netStart = System.nanoTime();
 
-        try {
-            AiRequestDto aiPayload = new AiRequestDto(
-                    request.getAmount().doubleValue(),
-                    request.getV1(),
-                    request.getV2(),
-                    request.getV3(),
-                    request.getV4(),
-                    request.getV5()
-            );
+        // Build the payload transport object destined for Python
+        AiRequestDto aiPayload = new AiRequestDto(
+                request.getAmount().doubleValue(),
+                request.getV1(),
+                request.getV2(),
+                request.getV3(),
+                request.getV4(),
+                request.getV5()
+        );
 
-            AiRiskResponse response = webClient.post()
-                    .uri(endpoint)
-                    .bodyValue(aiPayload)
-                    .retrieve()
-                    .bodyToMono(AiRiskResponse.class)
-                    .block();
+        // Non-blocking Execution Chain via WebClient & Project Reactor
+        return webClient.post()
+                .uri(endpoint)
+                .bodyValue(aiPayload)
+                .retrieve()
+                .bodyToMono(AiRiskResponse.class) // Asynchronously parses JSON response into a Mono
+                .map(aiResponse -> {
+                    //  executes non-blocking style once the AI response arrives
+                    double networkCommunicationTimeMs = (System.nanoTime() - netStart) / 1_000_000.0;
+                    double riskScore = (aiResponse != null) ? aiResponse.getRiskScore() : 0.0;
+                    ResponseDto.PythonTelemetryDto pythonTelemetry = (aiResponse != null && aiResponse.getPythonTelemetry() != null)
+                            ? aiResponse.getPythonTelemetry()
+                            : new ResponseDto.PythonTelemetryDto();
 
-            double netDurationMs = (System.nanoTime() - netStart) / 1_000_000.0;
-            double score = (response != null) ? response.getRiskScore() : 0.0;
-            ResponseDto.PythonTelemetryDto telemetry = (response != null && response.getPythonTelemetry() != null)
-                    ? response.getPythonTelemetry()
-                    : new ResponseDto.PythonTelemetryDto();
+                    return new IntermediateResult(riskScore, networkCommunicationTimeMs, pythonTelemetry);
+                })
+                .onErrorResume(e -> {
+                    // Fallback operator
+                    double networkCommunicationTimeMs = (System.nanoTime() - netStart) / 1_000_000.0;
+                    log.error("[Transaction ID: {}] Failed to communicate with Python endpoint {}: {}",
+                            request.getTransactionId(), endpoint, e.getMessage());
+                    return Mono.just(new IntermediateResult(0.0, networkCommunicationTimeMs, new ResponseDto.PythonTelemetryDto()));
+                })
+                .flatMap(intermediate -> {
+                    // Unpacks the intermediate container to finish database persistence and response building
+                    double riskScore = intermediate.riskScore;
+                    double networkCommunicationTimeMs = intermediate.networkTimeMs;
+                    ResponseDto.PythonTelemetryDto pythonTelemetry = intermediate.pythonTelemetry;
 
-            return new AiTimingResult(score, netDurationMs, telemetry);
+                    // Evaluate risk status
+                    String status = (riskScore >= RISK_THRESHOLD) ? "FLAGGED" : "APPROVED";
 
-        } catch (Exception e) {
-            double netDurationMs = (System.nanoTime() - netStart) / 1_000_000.0;
-            log.error("[Transaction ID: {}] Failed to communicate with Python endpoint {}: {}",
-                    request.getTransactionId(), endpoint, e.getMessage());
-            return new AiTimingResult(0.0, netDurationMs, new ResponseDto.PythonTelemetryDto());
-        }
+                    // Database Write Persistence
+                    long dbStart = System.nanoTime();
+                    double currentExecutionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
+
+                    // Wrapped the database save logic into a reactive container (Mono) so the pipeline waits for it to finish instead of dropping it.
+                    Mono<Void> dbMono;
+                    if (dbSaveEnabled) {
+                        Transaction entity = new Transaction();
+                        entity.setTransactionId(request.getTransactionId());
+                        entity.setAccountId(request.getAccountId());
+                        entity.setTransactionAmount(request.getAmount());
+                        entity.setTransactionType(request.getTransactionType());
+                        entity.setV1(request.getV1());
+                        entity.setV2(request.getV2());
+                        entity.setV3(request.getV3());
+                        entity.setV4(request.getV4());
+                        entity.setV5(request.getV5());
+                        entity.setRiskScore(riskScore);
+                        entity.setTransactionStatus(status);
+                        entity.setEvaluationStrategy(strategy);
+                        entity.setExecutionTimeMs(currentExecutionTimeMs);
+
+                        dbMono = transactionRepository.save(entity)
+                                .doOnSuccess(saved -> log.debug("[Transaction ID: {}] Saved to H2 database.", request.getTransactionId()))
+                                .then();
+                    } else {
+                        log.debug("[Transaction ID: {}] DB persistence bypassed via configuration flag.", request.getTransactionId());
+                        dbMono = Mono.empty();
+                    }
+
+                    return dbMono.map(unused -> {
+                        double dbWriteTimeMs = (System.nanoTime() - dbStart) / 1_000_000.0;
+
+                        // Response Building & Serialization
+                        long responseBuildStart = System.nanoTime();
+                        double executionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
+
+                        log.info("[Transaction ID: {}] Executed strategy [{}] in {} ms | Status: {}",
+                                request.getTransactionId(), strategy, executionTimeMs, status);
+
+                        ResponseDto response = new ResponseDto(
+                                request.getTransactionId(),
+                                riskScore,
+                                status,
+                                strategy,
+                                executionTimeMs
+                        );
+                        response.setAccountId(request.getAccountId());
+                        response.setAmount(request.getAmount());
+                        response.setTransactionType(request.getTransactionType());
+
+                        // Populate complete telemetry metrics tracking
+                        response.setRequestParsingTimeMs(requestParsingTimeMs);
+                        response.setNetworkCommunicationTimeMs(networkCommunicationTimeMs);
+                        response.setDbWriteTimeMs(dbWriteTimeMs);
+                        response.setPythonTelemetry(pythonTelemetry);
+
+                        double responseSerializationTimeMs = (System.nanoTime() - responseBuildStart) / 1_000_000.0;
+                        response.setResponseSerializationTimeMs(responseSerializationTimeMs);
+
+                        // Wraps the final populated DTO back into a reactive Mono container
+                        return response;
+                    });
+                });
     }
 
-    private static class AiTimingResult {
+    // Helper holder class to pass intermediate network values down the reactive chain
+    private static class IntermediateResult {
         double riskScore;
         double networkTimeMs;
         ResponseDto.PythonTelemetryDto pythonTelemetry;
 
-        public AiTimingResult(double riskScore, double networkTimeMs, ResponseDto.PythonTelemetryDto pythonTelemetry) {
+        public IntermediateResult(double riskScore, double networkTimeMs, ResponseDto.PythonTelemetryDto pythonTelemetry) {
             this.riskScore = riskScore;
             this.networkTimeMs = networkTimeMs;
             this.pythonTelemetry = pythonTelemetry;
         }
     }
 
+    // Internal mapping container for incoming Python JSON payloads
     private static class AiRiskResponse {
         private double riskScore;
         private ResponseDto.PythonTelemetryDto pythonTelemetry;

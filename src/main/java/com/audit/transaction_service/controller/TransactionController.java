@@ -6,6 +6,7 @@ import com.audit.transaction_service.service.TransactionService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/v1/transactions")
@@ -18,8 +19,8 @@ public class TransactionController {
     }
 
     @PostMapping
-    public ResponseEntity<ResponseDto> processTransaction(@Valid @RequestBody RequestDto request) {
-        ResponseDto response = transactionService.processTransaction(request);
-        return ResponseEntity.ok(response);
+    public Mono<ResponseEntity<ResponseDto>> processTransaction(@Valid @RequestBody RequestDto request) {
+        return transactionService.processTransaction(request)
+                .map(ResponseEntity::ok);
     }
 }

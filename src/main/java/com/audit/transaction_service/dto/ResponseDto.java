@@ -18,7 +18,7 @@ public class ResponseDto {
     private double dbWriteTimeMs;
     private double responseSerializationTimeMs;
 
-    // Python-side microservice internal telemetry metrics container
+    // Python-side microservice intern  al telemetry metrics container
     private PythonTelemetryDto pythonTelemetry = new PythonTelemetryDto();
 
     private String strategy;

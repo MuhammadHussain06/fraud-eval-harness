@@ -6,44 +6,38 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.2.5</version>
-		<relativePath/> <!-- lookup parent from repository -->
+		<version>3.2.12</version>
+		<relativePath/>
 	</parent>
 
 	<groupId>com.audit</groupId>
 	<artifactId>fraud-eval-harness</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>transaction-service</name>
-	<description>Transaction Service with Benchmarking Capabilities</description>
+	<description>Transaction Service with Reactive Benchmarking Capabilities</description>
 
 	<properties>
 		<java.version>21</java.version>
 	</properties>
 
 	<dependencies>
-		<!-- Web Starter (Spring MVC) -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-web</artifactId>
-		</dependency>
-
-		<!-- JPA / Database -->
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
-		</dependency>
-
-		<!-- In-Memory H2 Database -->
-		<dependency>
-			<groupId>com.h2database</groupId>
-			<artifactId>h2</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-
-		<!-- WebFlux (Provides WebClient for calling Python AI service) -->
+		<!-- WebFlux (Provides Netty server and WebClient for reactive pipelines) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webflux</artifactId>
+		</dependency>
+
+		<!-- Reactive R2DBC Starter -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-data-r2dbc</artifactId>
+		</dependency>
+
+		<!-- H2 R2DBC Driver -->
+		<dependency>
+			<groupId>io.r2dbc</groupId>
+			<artifactId>r2dbc-h2</artifactId>
+			<scope>runtime</scope>
 		</dependency>
 
 		<!-- Bean Validation -->
@@ -70,7 +64,6 @@
 
 	<build>
 		<plugins>
-			<!-- Spring Boot Maven Plugin -->
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
@@ -83,8 +76,6 @@
 					</excludes>
 				</configuration>
 			</plugin>
-
-			<!-- Maven Compiler Plugin configured for Lombok under Java 21 -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -103,5 +94,4 @@
 			</plugin>
 		</plugins>
 	</build>
-
 </project>
