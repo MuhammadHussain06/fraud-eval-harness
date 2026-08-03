@@ -20,8 +20,6 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final WebClient webClient;
 
-    private static final double RISK_THRESHOLD = 0.5;
-
     @Value("${app.db.save.enabled:true}")
     private boolean dbSaveEnabled;
 
@@ -63,6 +61,7 @@ public class TransactionService {
         long netStart = System.nanoTime();
 
         AiRequestDto aiPayload = new AiRequestDto(
+                request.getTransactionId(),
                 request.getAmount().doubleValue(),
                 request.getV1(),
                 request.getV2(),
@@ -80,24 +79,27 @@ public class TransactionService {
                 .map(aiResponse -> {
                     double networkCommunicationTimeMs = (System.nanoTime() - netStart) / 1_000_000.0;
                     double riskScore = (aiResponse != null) ? aiResponse.getRiskScore() : 0.0;
+                    boolean isFraud = (aiResponse != null) && aiResponse.isFraud();
                     ResponseDto.PythonTelemetryDto pythonTelemetry = (aiResponse != null && aiResponse.getPythonTelemetry() != null)
                             ? aiResponse.getPythonTelemetry()
                             : new ResponseDto.PythonTelemetryDto();
 
-                    return new IntermediateResult(riskScore, networkCommunicationTimeMs, pythonTelemetry);
+                    return new IntermediateResult(riskScore, isFraud, networkCommunicationTimeMs, pythonTelemetry);
                 })
                 .onErrorResume(e -> {
                     double networkCommunicationTimeMs = (System.nanoTime() - netStart) / 1_000_000.0;
                     log.error("[Transaction ID: {}] Failed to communicate with Python endpoint {}: {}",
                             request.getTransactionId(), endpoint, e.getMessage());
-                    return Mono.just(new IntermediateResult(0.0, networkCommunicationTimeMs, new ResponseDto.PythonTelemetryDto()));
+                    return Mono.just(new IntermediateResult(0.0, false, networkCommunicationTimeMs, new ResponseDto.PythonTelemetryDto()));
                 })
                 .flatMap(intermediate -> {
                     double riskScore = intermediate.riskScore;
+                    boolean isFraud = intermediate.isFraud;
                     double networkCommunicationTimeMs = intermediate.networkTimeMs;
                     ResponseDto.PythonTelemetryDto pythonTelemetry = intermediate.pythonTelemetry;
 
-                    String status = (riskScore >= RISK_THRESHOLD) ? "FLAGGED" : "APPROVED";
+                    // Decision delegated directly from Python's isFraud output
+                    String status = isFraud ? "FLAGGED" : "APPROVED";
                     long dbStart = System.nanoTime();
                     double currentExecutionTimeMs = (System.nanoTime() - overallStartTime) / 1_000_000.0;
 
@@ -162,19 +164,25 @@ public class TransactionService {
 
     private static class IntermediateResult {
         double riskScore;
+        boolean isFraud;
         double networkTimeMs;
         ResponseDto.PythonTelemetryDto pythonTelemetry;
 
-        public IntermediateResult(double riskScore, double networkTimeMs, ResponseDto.PythonTelemetryDto pythonTelemetry) {
+        public IntermediateResult(double riskScore, boolean isFraud, double networkTimeMs, ResponseDto.PythonTelemetryDto pythonTelemetry) {
             this.riskScore = riskScore;
+            this.isFraud = isFraud;
             this.networkTimeMs = networkTimeMs;
             this.pythonTelemetry = pythonTelemetry;
         }
     }
 
     private static class AiRiskResponse {
+        private boolean isFraud;
         private double riskScore;
         private ResponseDto.PythonTelemetryDto pythonTelemetry;
+
+        public boolean isFraud() { return isFraud; }
+        public void setFraud(boolean fraud) { isFraud = fraud; }
 
         public double getRiskScore() { return riskScore; }
         public void setRiskScore(double riskScore) { this.riskScore = riskScore; }

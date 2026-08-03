@@ -2,7 +2,8 @@ package com.audit.transaction_service.dto;
 
 public class AiRequestDto {
 
-    private double transactionAmount;
+    private String transactionId;
+    private double amount;
     private double v1;
     private double v2;
     private double v3;
@@ -11,8 +12,9 @@ public class AiRequestDto {
 
     public AiRequestDto() {}
 
-    public AiRequestDto(double transactionAmount, double v1, double v2, double v3, double v4, double v5) {
-        this.transactionAmount = transactionAmount;
+    public AiRequestDto(String transactionId, double amount, double v1, double v2, double v3, double v4, double v5) {
+        this.transactionId = transactionId;
+        this.amount = amount;
         this.v1 = v1;
         this.v2 = v2;
         this.v3 = v3;
@@ -20,8 +22,11 @@ public class AiRequestDto {
         this.v5 = v5;
     }
 
-    public double getTransactionAmount() { return transactionAmount; }
-    public void setTransactionAmount(double transactionAmount) { this.transactionAmount = transactionAmount; }
+    public String getTransactionId() { return transactionId; }
+    public void setTransactionId(String transactionId) { this.transactionId = transactionId; }
+
+    public double getAmount() { return amount; }
+    public void setAmount(double amount) { this.amount = amount; }
 
     public double getV1() { return v1; }
     public void setV1(double v1) { this.v1 = v1; }
